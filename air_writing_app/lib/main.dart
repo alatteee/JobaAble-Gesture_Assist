@@ -13,9 +13,6 @@ import 'package:logbook_app_069/services/preferences_service.dart';
 
 Future<void> _bootstrapBackground() async {
   try {
-    // Init ini tidak boleh menahan rendering UI awal.
-    await dotenv.load(fileName: '.env');
-
     Intl.defaultLocale = 'id_ID';
     await initializeDateFormatting('id_ID', null);
 
@@ -38,6 +35,10 @@ Future<void> _bootstrapBackground() async {
 Future<void> main() async {
   // Wajib untuk operasi async sebelum runApp
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Muat env lebih awal supaya MongoService sudah punya MONGODB_URI
+  // saat save pertama dipanggil dari UI.
+  await dotenv.load(fileName: '.env');
 
   // 1) Inisialisasi Hive harus selalu berhasil agar offline mode tetap jalan.
   await Hive.initFlutter();

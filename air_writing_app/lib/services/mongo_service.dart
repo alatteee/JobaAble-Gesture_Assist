@@ -12,6 +12,21 @@ class MongoService {
   DbCollection? _collection;
 
   final String _source = "mongo_service.dart";
+  final bool _debug = dotenv.env['MONGO_DEBUG'] == '1' || dotenv.env['MONGO_DEBUG'] == 'true';
+
+  String _maskUri(String uri) {
+    try {
+      // Mask credentials between scheme:// and @ if present
+      final schemeSplit = uri.split('://');
+      if (schemeSplit.length < 2) return uri;
+      final afterScheme = schemeSplit.sublist(1).join('://');
+      if (!afterScheme.contains('@')) return uri;
+      final parts = afterScheme.split('@');
+      return '${schemeSplit.first}://***@${parts.sublist(1).join('@')}';
+    } catch (_) {
+      return uri;
+    }
+  }
 
   factory MongoService() => _instance;
   MongoService._internal();
@@ -26,6 +41,14 @@ class MongoService {
       );
       await connect();
     }
+    if (_collection == null) {
+      await LogHelper.writeLog(
+        "ERROR: Koleksi tetap null setelah koneksi",
+        source: _source,
+        level: 1,
+      );
+      throw Exception('Collection not available');
+    }
     return _collection!;
   }
 
@@ -38,14 +61,27 @@ class MongoService {
       }
 
   
-      String dbUri;
-      if (rawUri.contains('/logbook_db')) {
-        dbUri = rawUri;
-      } else {
-        final uriParts = rawUri.split('?');
-        final base = uriParts.first;
-        final query = uriParts.length > 1 ? '?${uriParts.sublist(1).join('?')}' : '';
-        dbUri = "$base/logbook_db$query";
+      final dbName = dotenv.env['MONGO_DB_NAME'] ?? 'air_writing_logbook';
+      final collectionName = dotenv.env['MONGO_COLLECTION'] ?? 'writing_logs';
+      // Build full DB URI based on rawUri and provided DB name.
+      final uriParts = rawUri.split('?');
+      final base = uriParts.first;
+      final query = uriParts.length > 1 ? '?${uriParts.sublist(1).join('?')}' : '';
+
+      final cleanBase = base.endsWith('/') ? base.substring(0, base.length - 1) : base;
+      final dbUri = "$cleanBase/$dbName$query";
+
+      if (_debug) {
+        await LogHelper.writeLog(
+          "DEBUG: rawUri (masked): ${_maskUri(rawUri)}",
+          source: _source,
+          level: 2,
+        );
+        await LogHelper.writeLog(
+          "DEBUG: built dbUri: $dbUri",
+          source: _source,
+          level: 2,
+        );
       }
 
       _db = await Db.create(dbUri);
@@ -60,7 +96,13 @@ class MongoService {
         },
       );
 
-      _collection = _db!.collection('logs');
+      _collection = _db!.collection(collectionName);
+
+      await LogHelper.writeLog(
+        "DEBUG: Using DB '$dbName' and Collection '$collectionName'",
+        source: _source,
+        level: 2,
+      );
 
       await LogHelper.writeLog(
         "DATABASE: Terhubung & Koleksi Siap",
@@ -106,13 +148,37 @@ class MongoService {
   Future<void> insertLog(LogModel log) async {
     try {
       final collection = await _getSafeCollection();
+      final payload = log.toMap();
+      await LogHelper.writeLog(
+        "DEBUG: insertLog called for '${log.title}' (teamId: ${log.teamId})",
+        source: _source,
+        level: 2,
+      );
+      if (_debug) {
+        await LogHelper.writeLog(
+          "DEBUG: payload: $payload",
+          source: _source,
+          level: 2,
+        );
+      }
+
       if (log.id == null) {
-        await collection.insertOne(log.toMap());
+        final res = await collection.insertOne(payload);
+        await LogHelper.writeLog(
+          "DEBUG: insertOne result: $res",
+          source: _source,
+          level: 2,
+        );
       } else {
-        await collection.replaceOne(
+        final res = await collection.replaceOne(
           where.id(log.id!),
-          log.toMap(),
+          payload,
           upsert: true,
+        );
+        await LogHelper.writeLog(
+          "DEBUG: replaceOne result: $res",
+          source: _source,
+          level: 2,
         );
       }
 

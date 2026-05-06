@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:intl/intl.dart'; 
+import 'package:path_provider/path_provider.dart';
 
 class LogHelper {
   static Future<void> writeLog(
@@ -65,7 +66,14 @@ class LogHelper {
     final datePart = DateFormat('dd-MM-yyyy').format(now);
     final timePart = DateFormat('HH:mm:ss').format(now);
     final fileName = '$datePart.log';
-    final dir = Directory('logs');
+    Directory dir;
+
+    try {
+      final appDir = await getApplicationDocumentsDirectory();
+      dir = Directory('${appDir.path}${Platform.pathSeparator}logs');
+    } catch (_) {
+      dir = Directory('logs');
+    }
 
     if (!await dir.exists()) {
       await dir.create(recursive: true);
